@@ -142,7 +142,5 @@
                                 (eel-completion-function default-directory)
                                 nil nil nil eel--find-file-history))))
 
-(global-set-key (kbd "C-x p f") 'eel-find-file)
-
 (provide 'eel)
 ;;; eel.el ends here
