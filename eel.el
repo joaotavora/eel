@@ -23,17 +23,11 @@
 ;; 
 
 ;;; Code:
-
-
-
-(provide 'eel)
-;;; eel.el ends here
-
 (require 'cl-lib)
+(require 'project)
 
 
 (defun eel (str &optional dir)
-  (interactive (list "/hhh?path=1&json=1" default-directory))
   (let* ((dir (or dir default-directory))
          (headers '(("Connection" . "Close")))
          (fulldir (expand-file-name dir))
@@ -42,11 +36,13 @@
                              (replace-regexp-in-string "/" "\\\\\\\\"
                                                        (convert-standard-filename
                                                         (expand-file-name dir))))
+                            ;;  FIXME: this is wrong.  We need to
+                            ;;  quote each character, then join with .*
                             (replace-regexp-in-string "" ".*" (regexp-quote str))))
          (params `(("search" . ,searcharg)
                    ("regex" . "1")
                    ("json" . "1")
-                   ("count" . 500)
+                   ("count" . 250)
                    ("path_column" . "1")))
          (query (format "GET /?%s HTTP/1.1"
                         (string-join (cl-loop for (q . v) in params
@@ -75,10 +71,17 @@
                  for r across (plist-get (json-parse-buffer :object-type 'plist) 
                                          :results)
                  for cand = (cl-destructuring-bind (&key type name path) r
-                              (substring (expand-file-name (concat name (and (string= type "folder") "//"))
+                              (let ((folderp (string= type "folder")))
+                              (substring (expand-file-name (concat name (and folderp "//"))
                                                            path)
-                                         (1+ (length fulldir))))
-                 unless (string-empty-p cand) collect cand)))))))
+                                         (+ (if folderp 0 1)
+                                            (length fulldir)))))
+                 unless (string-empty-p cand) do
+                 ;; TODO: fix this face highlighting with a loop
+                 (add-face-text-property 0 1
+                                         'completions-common-part
+                                         nil cand)
+                 and collect cand)))))))
       (process-send-string
        conn
        (cl-loop for (header . value) in headers
@@ -125,17 +128,21 @@
     (lambda (string _pred action)
       (pcase action
         (`metadata `(metadata
-                     (category . eglot-indirection-joy)))
-        (`(eglot--lsp-tryc . ,point) `(eglot--lsp-tryc . (,string . ,point)))
-        (`(eglot--lsp-allc . ,_point) `(eglot--lsp-allc . ,(lookup string)))
+                     (category . eel-indirection-joy)))
+        (`(eel--evthing-tryc . ,point) `(eel--evthing-tryc . (,string . ,point)))
+        (`(eel--evthing-allc . ,_point) `(eel--evthing-allc . ,(lookup string)))
         (_ nil)))))
 
+(defvar eel--find-file-history nil)
 
-(when nil
-  (completing-read "hmmm: " (eel-completion-function "~/Source/Emacs/emacs"))
-  (completing-read "hmmm: " (eel-completion-function "c:/repo/tsw/application"))
-  (eel "raborabo" "c:/repo/tsw")
-  )
+(defun eel-find-file (dir)
+  (interactive (list (project-root (project-current))))
+  (let ((default-directory (expand-file-name dir)))
+    (find-file (completing-read "Eel find file: "
+                                (eel-completion-function default-directory)
+                                nil nil nil eel--find-file-history))))
 
 
 
+(provide 'eel)
+;;; eel.el ends here
