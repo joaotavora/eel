@@ -26,19 +26,17 @@
 (require 'cl-lib)
 (require 'project)
 
-
-(defun eel (str &optional dir)
+(defun eel (re &optional dir)
   (let* ((dir (or dir default-directory))
          (headers '(("Connection" . "Close")))
          (fulldir (expand-file-name dir))
-         (searcharg (format "%s%s"
+         (searcharg (format "%s.*%s"
                             (url-hexify-string
                              (replace-regexp-in-string "/" "\\\\\\\\"
                                                        (convert-standard-filename
                                                         (expand-file-name dir))))
-                            ;;  FIXME: this is wrong.  We need to
-                            ;;  quote each character, then join with .*
-                            (replace-regexp-in-string "" ".*" (regexp-quote str))))
+                            (url-hexify-string
+                             (replace-regexp-in-string "/" "\\\\\\\\" re))))
          (params `(("search" . ,searcharg)
                    ("regex" . "1")
                    ("json" . "1")
@@ -53,7 +51,7 @@
                                 :service 3636
                                 :buffer (generate-new-buffer " *eel-process*")))
          (cancelled nil))
-    (message "searcharg is %s" searcharg)
+    ;; (message "searcharg is %s" searcharg)
     (with-current-buffer (process-buffer conn)
       (erase-buffer))
     (catch 'done
@@ -74,13 +72,15 @@
                               (let ((folderp (string= type "folder")))
                               (substring (expand-file-name (concat name (and folderp "//"))
                                                            path)
-                                         (+ (if folderp 0 1)
-                                            (length fulldir)))))
-                 unless (string-empty-p cand) do
-                 ;; TODO: fix this face highlighting with a loop
-                 (add-face-text-property 0 1
-                                         'completions-common-part
-                                         nil cand)
+                                         (length fulldir))))
+                 unless (or (string-empty-p cand)
+                            (string-prefix-p ".git" cand))
+                 do
+                 (save-match-data
+                   (when (string-match re cand)
+                     (add-face-text-property (match-beginning 0) (match-end 0)
+                                           'completions-common-part
+                                           nil cand)))
                  and collect cand)))))))
       (process-send-string
        conn
@@ -138,11 +138,11 @@
 (defun eel-find-file (dir)
   (interactive (list (project-root (project-current))))
   (let ((default-directory (expand-file-name dir)))
-    (find-file (completing-read "Eel find file: "
+    (find-file (completing-read (format "Eel find file in %s: " dir)
                                 (eel-completion-function default-directory)
                                 nil nil nil eel--find-file-history))))
 
-
+(global-set-key (kbd "C-x p f") 'eel-find-file)
 
 (provide 'eel)
 ;;; eel.el ends here
