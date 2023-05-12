@@ -20,11 +20,12 @@
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
 (require 'cl-lib)
 (require 'project)
+(require 'external-completion)
 
 (defun eel (re &optional dir)
   (let* ((dir (or dir default-directory))
@@ -74,7 +75,7 @@
                                                            path)
                                          (length fulldir))))
                  unless (or (string-empty-p cand)
-                            (string-prefix-p ".git" cand))
+                            (string-prefix-p "." cand))
                  do
                  (save-match-data
                    (when (string-match re cand)
@@ -92,51 +93,28 @@
             (setq cancelled (if (sit-for 30) 'timeout 'user-input))
           (kill-process conn))))))
 
-;;; Backend completion
-
-(add-to-list 'completion-category-overrides
-             '(eel-indirection-joy (styles . (eel--evthing-backend-style))))
-
-(add-to-list 'completion-styles-alist
-             '(eel--evthing-backend-style
-               eel--evthing-backend-style-try-completion
-               eel--evthing-backend-style-all-completions
-               "Ad-hoc completion style provided by the completion table."))
-
-(defun eel--evthing-backend-style-call (op string table pred point)
-  (when (functionp table)
-    (let ((res (funcall table string pred (cons op point))))
-      (when (eq op (car-safe res))
-        (cdr res)))))
-
-(defun eel--evthing-backend-style-try-completion (string table pred point)
-  (eel--evthing-backend-style-call 'eel--evthing-tryc string table pred point))
-
-(defun eel--evthing-backend-style-all-completions (string table pred point)
-  (eel--evthing-backend-style-call 'eel--evthing-allc string table pred point))
-
 ;;; Completion table
 
 (cl-defmethod eel-completion-function (dir)
-  (cl-labels ((lookup (pat)
+  (cl-labels ((lookup (pat _point)
                 (let ((refreshed (eel pat dir)))
                   (cond ((listp refreshed) refreshed)
                         ((eq 'timeout refreshed)
                          (message "oops, timeout"))
                         ((eq 'user-input refreshed)
                          nil)))))
-    (lambda (string _pred action)
-      (pcase action
-        (`metadata `(metadata
-                     (category . eel-indirection-joy)))
-        (`(eel--evthing-tryc . ,point) `(eel--evthing-tryc . (,string . ,point)))
-        (`(eel--evthing-allc . ,_point) `(eel--evthing-allc . ,(lookup string)))
-        (_ nil)))))
+    (external-completion-table 'eel #'lookup)))
 
 (defvar eel--find-file-history nil)
 
+(defvar eel-finding-context nil)
+
 (defun eel-find-file (dir)
-  (interactive (list (project-root (project-current))))
+  (interactive (list
+                (if (>= (prefix-numeric-value current-prefix-arg) 2)
+                    (read-directory-name "Eel find file in directory? ")
+                    (let ((eel-finding-context t))
+                      (project-root (project-current))))))
   (let ((default-directory (expand-file-name dir)))
     (find-file (completing-read (format "Eel find file in %s: " dir)
                                 (eel-completion-function default-directory)
